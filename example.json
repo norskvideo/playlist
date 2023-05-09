@@ -1,0 +1,9 @@
+[
+  {
+    "source": "/some/file.ts",
+    "duration": 10000
+  },
+  "/some/file.mp4",
+  "srt://127.0.0.1:5002?mode=caller",
+  "rtmp://0.0.0.0:5003"
+]
