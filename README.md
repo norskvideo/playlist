@@ -67,4 +67,3 @@ Outputs to a hosted WebRTC player, HLS and a local file are set up.
 When the playlist is initialised, any listener nodes required for inbound connections (RTMP, SRT in listen mode, etc) are created and start listening immediately to allow the player to connect.
 
 Any files in the playlist are simply played as the current item advances to them. Live sources are pre-connected at the point the prior playlist item starts playing, to allow for an immediate switch if requested - it may take some time to connect to a live source initially, and on starting to decode the source depending on key-frame timing.
-
