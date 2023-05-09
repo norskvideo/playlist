@@ -35,7 +35,7 @@ const playlist = [
   , duration: 10000
   },
   { source: 
-    { type: "srt 
+    { type: "srt"
     , config: { ip: "127.0.0.1", port: 5000, mode: "listener" }
     }
   }
