@@ -1,4 +1,4 @@
-import { AudioGainNode, audioStreamKeys, ImageFileInputSettings, LocalFileInputSettings, Mp4FileInputSettings, Norsk, NorskSettings, PinToKey, ReceiveFromAddress, RtmpServerInputNode, RtmpServerInputSettings, RtpInputSettings, selectAudio, selectVideo, SmoothSwitcherNode, SourceMediaNode, SrtInputNode, SrtInputSettings, StreamKey, StreamKeyOverrideNode, StreamMetadata, videoStreamKeys, WhipInputSettings } from "@id3asnorsk/norsk-sdk";
+import { AudioGainNode, audioStreamKeys, ImageFileInputSettings, LocalFileInputSettings, Mp4FileInputSettings, Norsk, PinToKey, ReceiveFromAddress, RtmpServerInputNode, RtmpServerInputSettings, RtpInputSettings, selectAudio, selectVideo, SmoothSwitcherNode, SourceMediaNode, SrtInputNode, SrtInputSettings, StreamKey, StreamKeyOverrideNode, StreamMetadata, videoStreamKeys, WhipInputSettings } from "@id3asnorsk/norsk-sdk";
 
 export type PlaylistItem =
   {
@@ -76,7 +76,7 @@ export class Playlist {
   srtListeners: Map<number, ListenerNode<SrtInputNode>> = new Map();
   rtmpListeners: Map<number, ListenerNode<RtmpServerInputNode>> = new Map()
 
-  private constructor(private norsk: Norsk, public readonly playlist: PlaylistItem[], private switcher: SmoothSwitcherNode<SwitchPins>, private silence: AudioGainNode, public video: StreamKeyOverrideNode, public audio: StreamKeyOverrideNode, transitionDuration?: number) {
+  private constructor(private norsk: Norsk, public readonly playlist: PlaylistItem[], private switcher: SmoothSwitcherNode<SwitchPins>, private silence: AudioGainNode, public video: StreamKeyOverrideNode, public audio: StreamKeyOverrideNode, public outputResolution: { width: number, height: number}, transitionDuration?: number) {
     if (transitionDuration) {
       this.transitionDuration = transitionDuration;
     }
@@ -89,12 +89,12 @@ export class Playlist {
     this.update();
   }
 
-  public static async create(norsk: Norsk, playlist: PlaylistItem[], transitionDuration?: number): Promise<Playlist> {
+  public static async create(norsk: Norsk, playlist: PlaylistItem[], outputResolution: {width: number, height: number}, transitionDuration?: number): Promise<Playlist> {
     const switcher = await norsk.processor.control.smoothSwitcher({
       activeSource: "",
       id: "switcher",
       outputSource: "source",
-      outputResolution: { width: 640, height: 480 },
+      outputResolution,
       transitionDurationMs: transitionDuration,
       sampleRate: 48000
     });
@@ -143,7 +143,7 @@ export class Playlist {
       { source: switcher, sourceSelector: selectAudio },
     ]);
 
-    let ret = new Playlist(norsk, playlist, switcher, silence, videoStreamKey, audioStreamKey, transitionDuration);
+    let ret = new Playlist(norsk, playlist, switcher, silence, videoStreamKey, audioStreamKey, outputResolution, transitionDuration);
     ret.precreateListeners();
     return ret;
   }

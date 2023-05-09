@@ -119,16 +119,17 @@ async function go(playlist: PlaylistItem[]) {
       process.exit(1);
     }
   });
-  const player = await Playlist.create(norsk, playlist);
+  let fullResolution = { width: 1280, height: 720 };
+  const player = await Playlist.create(norsk, playlist, fullResolution);
   let encode = await norsk.processor.transform.videoEncodeLadder(
     {
       id: "encode",
       rungs:
         [
           {
-            name: "medium",
-            width: 320,
-            height: 240,
+            name: "full",
+            width: fullResolution.width,
+            height: fullResolution.height,
             frameRate: { frames: 25, seconds: 1 },
             codec: {
               type: "x264",
@@ -137,9 +138,9 @@ async function go(playlist: PlaylistItem[]) {
               bframes: 0,
               sceneCut: 0,
               tune: "zerolatency",
-              bitrateMode: { value: 250000, mode: "abr" }
-            },
-          },
+              bitrateMode: { value: 8000000, mode: "abr" },
+            }
+          }
         ]
     }
   );
@@ -201,7 +202,7 @@ function setupSwitchListener(player: Playlist) {
   <p>
     <button onclick="swap(); return false" style="font-size: 35">Next</button>
   </p>
-  <iframe width=700 height=600 frameBorder="0" src="http://localhost:8080/localWebRTC/out/player.html"></iframe>
+  <iframe width=1000 height=600 frameBorder="0" src="http://localhost:8080/localWebRTC/out/player.html"></iframe>
   `);
   });
 
