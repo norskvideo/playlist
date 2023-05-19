@@ -1,4 +1,4 @@
-import { AudioGainNode, audioStreamKeys, ImageFileInputSettings, LocalFileInputSettings, Mp4FileInputSettings, Norsk, PinToKey, ReceiveFromAddress, RtmpServerInputNode, RtmpServerInputSettings, RtpInputSettings, selectAudio, selectVideo, SmoothSwitcherNode, SourceMediaNode, SrtInputNode, SrtInputSettings, StreamKey, StreamKeyOverrideNode, StreamMetadata, videoStreamKeys, WhipInputSettings } from "@id3asnorsk/norsk-sdk";
+import { AudioGainNode, audioStreamKeys, FileImageInputSettings, LocalFileInputSettings, FileMp4InputSettings, Norsk, PinToKey, ReceiveFromAddress, RtmpServerInputNode, RtmpServerInputSettings, RtpInputSettings, selectAudio, selectVideo, StreamSwitchSmoothNode, SourceMediaNode, SrtInputNode, SrtInputSettings, StreamKey, StreamKeyOverrideNode, StreamMetadata, videoStreamKeys, WhipInputSettings } from "@norskvideo/norsk-sdk";
 
 export type PlaylistItem =
   {
@@ -10,13 +10,13 @@ export type PlaylistItem =
 
 export type PlaylistSource =
   {
-    type: "localTsFile",
+    type: "fileTs",
     config: Pick<LocalFileInputSettings, "fileName">
   }
   |
   {
-    type: "localMp4File",
-    config: Pick<Mp4FileInputSettings, "fileName">
+    type: "fileMp4",
+    config: Pick<FileMp4InputSettings, "fileName">
   }
   |
   {
@@ -31,7 +31,7 @@ export type PlaylistSource =
   |
   {
     type: "image",
-    config: Pick<ImageFileInputSettings, "fileName" | "imageFormat">
+    config: Pick<FileImageInputSettings, "fileName" | "imageFormat">
   }
   |
   {
@@ -76,7 +76,7 @@ export class Playlist {
   srtListeners: Map<number, ListenerNode<SrtInputNode>> = new Map();
   rtmpListeners: Map<number, ListenerNode<RtmpServerInputNode>> = new Map()
 
-  private constructor(private norsk: Norsk, public readonly playlist: PlaylistItem[], private switcher: SmoothSwitcherNode<SwitchPins>, private silence: AudioGainNode, public video: StreamKeyOverrideNode, public audio: StreamKeyOverrideNode, public outputResolution: { width: number, height: number}, transitionDuration?: number) {
+  private constructor(private norsk: Norsk, public readonly playlist: PlaylistItem[], private switcher: StreamSwitchSmoothNode<SwitchPins>, private silence: AudioGainNode, public video: StreamKeyOverrideNode, public audio: StreamKeyOverrideNode, public outputResolution: { width: number, height: number}, transitionDuration?: number) {
     if (transitionDuration) {
       this.transitionDuration = transitionDuration;
     }
@@ -90,7 +90,7 @@ export class Playlist {
   }
 
   public static async create(norsk: Norsk, playlist: PlaylistItem[], outputResolution: {width: number, height: number}, transitionDuration?: number): Promise<Playlist> {
-    const switcher = await norsk.processor.control.smoothSwitcher({
+    const switcher = await norsk.processor.control.streamSwitchSmooth({
       activeSource: "",
       id: "switcher",
       outputSource: "source",
@@ -206,7 +206,7 @@ export class Playlist {
     let next = this.playlist[currentSource + 1];
     if (next && isLive(next.source)) {
       console.log("Prewarming source", next);
-      let createInfo = await this.createNode(next, currentSource, this.subscribeToNode(currentSource+1, 'next'));
+      let createInfo = await this.createNode(next, currentSource+1, this.subscribeToNode(currentSource+1, 'next'));
       let { closeNode } = createInfo;
       let duration = next.duration || (await createInfo.duration);
       // This is set by the callback but we get the info back from the async call...don't ask
@@ -324,8 +324,8 @@ export class Playlist {
     let durationPromise: Promise<number | undefined> = Promise.resolve(undefined);
     let isStandaloneNode = true;
     switch (item.source.type) {
-      case "localTsFile":
-        node = await this.norsk.input.localTsFile({
+      case "fileTs":
+        node = await this.norsk.input.fileTs({
           onEof: () => {
             console.log(`EOF on ${nodeId}`);
             closeNode();
@@ -335,12 +335,12 @@ export class Playlist {
           ...item.source.config
         });
         break;
-      case "localMp4File": {
+      case "fileMp4": {
         let onDuration: (duration?: number) => void;
         durationPromise = new Promise((resolveDuration) => {
           onDuration = (x) => resolveDuration(x);
         });
-        node = await this.norsk.input.localMp4File({
+        node = await this.norsk.input.fileMp4({
           onEof: () => {
             console.log(`EOF on ${nodeId}`);
             closeNode();
@@ -388,10 +388,14 @@ export class Playlist {
       case "rtmp":
         {
           let config = item.source.config;
+          
+          if(!config.port)
+            throw new Error(`port is mandatory on rtmp in a playlist`);
+
           let listener = this.rtmpListeners.get(config.port);
           isStandaloneNode = false;
           if (!listener || !listener.node) {
-            throw new Error(`Didn't find SRT listener on port ${config.port}`);
+            throw new Error(`Didn't find RTMP listener on port ${config.port}`);
           }
           let sourceName: undefined | string = undefined;
           if (config.app && config.stream) {
@@ -415,7 +419,7 @@ export class Playlist {
           break;
         }
       case "image": {
-        node = await this.norsk.input.imageFile({
+        node = await this.norsk.input.fileImage({
           ...commonSettings,
           ...item.source.config
         });
@@ -488,6 +492,8 @@ export class Playlist {
           }
         case "rtmp":
           let port = item.source.config.port;
+          if(!port)
+            throw new Error(`port is mandatory on rtmp in a playlist`);
           let config = item.source.config;
           if (!this.rtmpListeners.has(port)) {
             console.log(`Creating RTMP listener on ${port}`)
@@ -555,8 +561,8 @@ class ListenerNode<T extends SourceMediaNode> {
 function isLive(item: PlaylistSource) {
   switch (item.type) {
     case "image":
-    case "localMp4File":
-    case "localTsFile":
+    case "fileMp4":
+    case "fileTs":
       return false;
     case "rtmp":
     case "rtp":

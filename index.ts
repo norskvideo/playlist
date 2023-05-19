@@ -1,4 +1,4 @@
-import { Norsk, audioStreamKeys, selectAudio, selectVideo, videoStreamKeys } from "@id3asnorsk/norsk-sdk"
+import { Norsk, audioStreamKeys, selectAudio, selectVideo, videoStreamKeys } from "@norskvideo/norsk-sdk"
 import { Playlist, PlaylistItem } from "./playlist";
 import { readFileSync, existsSync } from 'fs';
 import { URL } from 'node:url';
@@ -72,7 +72,7 @@ function main() {
         if (/\.ts$/.test(item.source)) {
           playlist.push({
             source: {
-              type: "localTsFile",
+              type: "fileTs",
               config: {
                 fileName: item.source
               }
@@ -82,7 +82,7 @@ function main() {
         } else if (/\.mp4$/.test(item.source)) {
           playlist.push({
             source: {
-              type: "localMp4File",
+              type: "fileMp4",
               config: {
                 fileName: item.source
               }
@@ -121,7 +121,7 @@ async function go(playlist: PlaylistItem[]) {
   });
   let fullResolution = { width: 1280, height: 720 };
   const player = await Playlist.create(norsk, playlist, fullResolution);
-  let encode = await norsk.processor.transform.videoEncodeLadder(
+  let encode = await norsk.processor.transform.videoEncode(
     {
       id: "encode",
       rungs:
@@ -146,13 +146,13 @@ async function go(playlist: PlaylistItem[]) {
   );
   encode.subscribe([{ source: player.video, sourceSelector: selectVideo }])
 
-  const output = await norsk.duplex.localWebRTC({ id: "out" });
+  const output = await norsk.duplex.webRtcBrowser({ id: "out" });
   output.subscribe([
     { source: encode, sourceSelector: videoStreamKeys },
     { source: player.audio, sourceSelector: audioStreamKeys }
   ]);
   console.log(output.playerUrl);
-  let tsFileOutput = await norsk.output.localTsFile({
+  let tsFileOutput = await norsk.output.fileTs({
     fileName: "/tmp/playlist.ts",
     id: "ts_file_output"
   });
@@ -161,9 +161,14 @@ async function go(playlist: PlaylistItem[]) {
     { source: player.audio, sourceSelector: audioStreamKeys }
   ]);
 
-  let audioOutput = await norsk.output.hlsAudio(segmentSettings("audio"));
-  let videoOutput = await norsk.output.hlsVideo(segmentSettings("video"));
-  let masterOutput = await norsk.output.hlsMaster({ id: "master", playlistName: "master" });
+  let audioOutput = await norsk.output.cmafAudio(segmentSettings("audio"));
+  let videoOutput = await norsk.output.cmafVideo(segmentSettings("video"));
+
+  let masterOutput = await norsk.output.cmafMaster({ 
+    id: "master", 
+    playlistName: "master",
+    destinations: [{ type: "local" as const, retentionPeriodSeconds: 60 }],
+  });
 
   audioOutput.subscribe([{ source: player.audio, sourceSelector: selectAudio }]);
   videoOutput.subscribe([{ source: encode, sourceSelector: selectVideo }]);
@@ -181,6 +186,7 @@ function segmentSettings(id: string) {
     id,
     partDurationSeconds: 1.0,
     segmentDurationSeconds: 4.0,
+    destinations: [{ type: "local" as const, retentionPeriodSeconds: 60 }],
   };
 }
 
@@ -202,7 +208,7 @@ function setupSwitchListener(player: Playlist) {
   <p>
     <button onclick="swap(); return false" style="font-size: 35">Next</button>
   </p>
-  <iframe width=1000 height=600 frameBorder="0" src="http://localhost:8080/localWebRTC/out/player.html"></iframe>
+  <iframe width=1000 height=600 frameBorder="0" src="http://localhost:8080/webRtcBrowser/out/player.html"></iframe>
   `);
   });
 

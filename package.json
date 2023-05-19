@@ -2,8 +2,8 @@
   "license": "MIT",
   "name": "@id3asnorsk/playlist",
   "dependencies": {
-    "@id3asnorsk/norsk-api": "0.0.322",
-    "@id3asnorsk/norsk-sdk": "0.0.322",
+    "@norskvideo/norsk-api": "1.0.332",
+    "@norskvideo/norsk-sdk": "1.0.332",
     "express": "^4.18.1",
     "tsconfig-paths": "^4.0.0",
     "typescript-nullable": "^0.6.0",
