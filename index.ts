@@ -119,8 +119,8 @@ async function go(playlist: PlaylistItem[]) {
       process.exit(1);
     }
   });
-  let fullResolution = { width: 1280, height: 720 };
-  const player = await Playlist.create(norsk, playlist, fullResolution);
+  let fullResolution = { width: 640, height: 360 };
+  const player = await Playlist.create(norsk, playlist, fullResolution, 500.0);
   let encode = await norsk.processor.transform.videoEncode(
     {
       id: "encode",
@@ -138,7 +138,8 @@ async function go(playlist: PlaylistItem[]) {
               bframes: 0,
               sceneCut: 0,
               tune: "zerolatency",
-              bitrateMode: { value: 8000000, mode: "abr" },
+              preset: "faster",
+              bitrateMode: { value: 5000000, mode: "abr" },
             }
           }
         ]
@@ -146,12 +147,12 @@ async function go(playlist: PlaylistItem[]) {
   );
   encode.subscribe([{ source: player.video, sourceSelector: selectVideo }])
 
-  const output = await norsk.duplex.webRtcBrowser({ id: "out" });
+  const output = await norsk.output.whep({ id: "out", iceServers: [] });
   output.subscribe([
     { source: encode, sourceSelector: videoStreamKeys },
     { source: player.audio, sourceSelector: audioStreamKeys }
   ]);
-  console.log(output.playerUrl);
+  console.log("Player: " + output.playerUrl);
   let tsFileOutput = await norsk.output.fileTs({
     fileName: "/tmp/playlist.ts",
     id: "ts_file_output"
@@ -173,11 +174,11 @@ async function go(playlist: PlaylistItem[]) {
   audioOutput.subscribe([{ source: player.audio, sourceSelector: selectAudio }]);
   videoOutput.subscribe([{ source: encode, sourceSelector: selectVideo }]);
   masterOutput.subscribe([{ source: player.audio, sourceSelector: selectAudio }, { source: encode, sourceSelector: selectVideo }]);
-  console.log(masterOutput.playlistUrl);
+  console.log("HLS: " + masterOutput.playlistUrl);
 
 
   player.start();
-  setupSwitchListener(player);
+  setupSwitchListener(player, output.playerUrl);
 
 }
 
@@ -190,7 +191,7 @@ function segmentSettings(id: string) {
   };
 }
 
-function setupSwitchListener(player: Playlist) {
+function setupSwitchListener(player: Playlist, playerUrl: string) {
   const app = express();
   const port = 6792;
   app.use(express.json());
@@ -208,7 +209,7 @@ function setupSwitchListener(player: Playlist) {
   <p>
     <button onclick="swap(); return false" style="font-size: 35">Next</button>
   </p>
-  <iframe width=1000 height=600 frameBorder="0" src="http://localhost:8080/webRtcBrowser/out/player.html"></iframe>
+  <iframe width=1000 height=600 frameBorder="0" src="${playerUrl}"></iframe>
   `);
   });
 

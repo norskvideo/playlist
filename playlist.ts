@@ -69,14 +69,14 @@ export class Playlist {
   } = {};
   playing: undefined | number;
 
-  transitionDuration = 300.0;
+  transitionDuration = 0.0;
   timeouts: NodeJS.Timeout[] = [];
   sourceIndex = 0;
 
   srtListeners: Map<number, ListenerNode<SrtInputNode>> = new Map();
   rtmpListeners: Map<number, ListenerNode<RtmpServerInputNode>> = new Map()
 
-  private constructor(private norsk: Norsk, public readonly playlist: PlaylistItem[], private switcher: StreamSwitchSmoothNode<SwitchPins>, private silence: AudioGainNode, public video: StreamKeyOverrideNode, public audio: StreamKeyOverrideNode, public outputResolution: { width: number, height: number}, transitionDuration?: number) {
+  private constructor(private norsk: Norsk, public readonly playlist: PlaylistItem[], private switcher: StreamSwitchSmoothNode<SwitchPins>, private silence: AudioGainNode, public video: StreamKeyOverrideNode, public audio: StreamKeyOverrideNode, public outputResolution: { width: number, height: number}, transitionDuration: number) {
     if (transitionDuration) {
       this.transitionDuration = transitionDuration;
     }
@@ -90,13 +90,17 @@ export class Playlist {
   }
 
   public static async create(norsk: Norsk, playlist: PlaylistItem[], outputResolution: {width: number, height: number}, transitionDuration?: number): Promise<Playlist> {
-    const switcher = await norsk.processor.control.streamSwitchSmooth({
+    let transitionDurationMs = transitionDuration !== undefined ? transitionDuration : 500.0;
+    const switcher = await norsk.processor.control.streamSwitchSmooth<string>({
       activeSource: "",
       id: "switcher",
       outputSource: "source",
       outputResolution,
-      transitionDurationMs: transitionDuration,
-      sampleRate: 48000
+      transitionDurationMs,
+      sampleRate: 48000,
+      onInboundContextChange: async (allStreams) => {
+        return await ret.onSwitchContextChange(allStreams)
+      },
     });
     const audio = await norsk.input.audioSignal({
       channelLayout: "stereo",
@@ -143,13 +147,12 @@ export class Playlist {
       { source: switcher, sourceSelector: selectAudio },
     ]);
 
-    let ret = new Playlist(norsk, playlist, switcher, silence, videoStreamKey, audioStreamKey, outputResolution, transitionDuration);
+    let ret: Playlist = new Playlist(norsk, playlist, switcher, silence, videoStreamKey, audioStreamKey, outputResolution, transitionDurationMs);
     ret.precreateListeners();
     return ret;
   }
 
   async update() {
-    console.log("Update start");
     for (let timeout of this.timeouts) {
       clearTimeout(timeout);
       this.timeouts = [];
@@ -214,8 +217,6 @@ export class Playlist {
       (this.playingItems.next as any as PlayingItem).duration = duration;
       (this.playingItems.next as any as PlayingItem).closeNode = closeNode;
     }
-
-    console.log("Update end");
   }
 
   subscribeToNode = (sourceIndex: number, nodeType: 'current' | 'next') => {
@@ -225,7 +226,6 @@ export class Playlist {
         item,
         silenceSub: undefined,
         sub: undefined,
-        ready: false,
         index: sourceIndex,
         closeNode
       };
@@ -243,12 +243,6 @@ export class Playlist {
           if (keys.length >= 1) {
             res = { [pin]: keys };
           }
-
-          // But don't switch until we have both audio/video
-          let ready = (kind == "video" || audio.length >= 1) && video.length >= 1;
-          state.ready = ready;
-
-          this.refreshActive();
           return res;
         }
       };
@@ -289,19 +283,32 @@ export class Playlist {
 
 
   refreshActive() {
-    // console.log("refreshActive", this.playing, this.playingItems.prev?.ready, this.playingItems.current?.ready, this.playingItems.next?.ready)
     const activateSource = (item: PlayingItem) => {
       this.playing = item.index;
-      setTimeout(() => { this.switcher.switchSource(item.index.toString()); }, 10);
+      this.switcher.switchSource(item.index.toString());
     };
-    if (this.playing !== this.playingItems.current?.index && this.playingItems.current?.ready) {
+    const ready = (item: PlayingItem | undefined) => {
+      if (!item) {
+        return false;
+      }
+      let ctx = this.switchContext.get(item.index.toString());
+      return ctx && ctx.length == 2;
+    }
+    if ( this.playingItems.current && this.playing !== this.playingItems.current.index && ready(this.playingItems.current)) {
       console.log("Switching to new source", this.playingItems.current.item);
       activateSource(this.playingItems.current);
-    } else if (this.playing === undefined && this.playingItems.prev?.ready) {
+    } else if (this.playing === undefined && this.playingItems.prev && ready(this.playingItems.prev)) {
       // This should have been started already one assumes, but what the heck
       console.log("Activating previous source which seems to be ready", this.playingItems.prev.item);
       activateSource(this.playingItems.prev);
     }
+  }
+
+  switchContext: Map<string, StreamMetadata[]> = new Map();
+
+  async onSwitchContextChange(contexts: Map<string, StreamMetadata[]>) {
+    this.switchContext = contexts;
+    this.refreshActive();
   }
 
   // Create the node. Subscription is a callback so it applies synchronously only node creation, not missing any initial frames
@@ -503,7 +510,7 @@ export class Playlist {
                   let sourceName = `${app}/${publishingName}`;
                   return { accept: true, audioStreamKey: { sourceName, renditionName: "default" }, videoStreamKey: { sourceName, renditionName: "default" } };
                 },
-                onConnectionStatusChange: (status, streamKeys) => {
+                onConnectionStatusChange: (connId, status, streamKeys) => {
                   onDisconnect(streamKeys[0].videoStreamKey.sourceName?.sourceName || "");
                 },
                 id: `rtmp-${port}`,
@@ -531,7 +538,6 @@ type PlayingItem = {
   item: PlaylistItem,
   sub?: ReceiveFromAddress<SwitchPins>,
   silenceSub?: ReceiveFromAddress<SwitchPins>,
-  ready: boolean,
   index: number,
   duration?: number,
   closeNode: () => void,
